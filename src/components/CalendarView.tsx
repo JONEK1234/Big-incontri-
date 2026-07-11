@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { SpecialDate, Encounter } from "../types";
 import { getAnniversaryStatus } from "../utils/anniversaryHelper";
-import { Calendar as CalendarIcon, Star, Gift, Heart, CalendarDays, Plus, Trash2, ArrowRight, Sparkles } from "lucide-react";
+import { Calendar as CalendarIcon, Star, Gift, Heart, CalendarDays, Plus, Trash2, ArrowRight, Sparkles, X, MessageSquare, ImageIcon } from "lucide-react";
 
 interface CalendarViewProps {
   specialDates: SpecialDate[];
@@ -17,6 +17,10 @@ export default function CalendarView({ specialDates, encounters, onAddSpecialDat
   const [newDesc, setNewDesc] = useState("");
   const [newType, setNewType] = useState<"anniversary" | "special_date" | "milestone">("anniversary");
   const [isSaving, setIsSaving] = useState(false);
+
+  // Encounter detailed view popover
+  const [selectedEncounter, setSelectedEncounter] = useState<Encounter | null>(null);
+  const [activeLightboxPhoto, setActiveLightboxPhoto] = useState<string | null>(null);
 
   // Calendar rendering state
   const today = new Date();
@@ -186,24 +190,26 @@ export default function CalendarView({ specialDates, encounters, onAddSpecialDat
                   </div>
 
                   {/* Anniversary calculation badge */}
-                  <div className="mt-3 flex items-center justify-between border-t border-dashed border-brand-100 pt-2.5">
-                    {status.isToday ? (
-                      <span className="text-xs font-black text-amber-700 flex items-center gap-1">
-                        <Sparkles className="w-3.5 h-3.5 animate-spin" />
-                        OGGI: 🎉 Festeggiamo {status.yearsElapsed} ann{status.yearsElapsed === 1 ? "o" : "i"} di questo evento!
-                      </span>
-                    ) : (
-                      <span className="text-xs font-medium text-brand-600 flex items-center gap-1">
-                        Prossimo traguardo: <strong className="text-brand-800 font-bold">{status.yearsToCelebrate} ann{status.yearsToCelebrate === 1 ? "o" : "i"}</strong> il {new Date(status.nextOccurrence).toLocaleDateString("it-IT", { month: "short", day: "numeric" })}
-                      </span>
-                    )}
+                  {special.type === "anniversary" && (
+                    <div className="mt-3 flex items-center justify-between border-t border-dashed border-brand-100 pt-2.5">
+                      {status.isToday ? (
+                        <span className="text-xs font-black text-amber-700 flex items-center gap-1">
+                          <Sparkles className="w-3.5 h-3.5 animate-spin" />
+                          OGGI: 🎉 Festeggiamo {status.yearsElapsed} ann{status.yearsElapsed === 1 ? "o" : "i"} di questo evento!
+                        </span>
+                      ) : (
+                        <span className="text-xs font-medium text-brand-600 flex items-center gap-1">
+                          Prossimo traguardo: <strong className="text-brand-800 font-bold">{status.yearsToCelebrate} ann{status.yearsToCelebrate === 1 ? "o" : "i"}</strong> il {new Date(status.nextOccurrence).toLocaleDateString("it-IT", { month: "short", day: "numeric" })}
+                        </span>
+                      )}
 
-                    {!status.isToday && (
-                      <span className="text-[10px] bg-brand-100 text-brand-700 font-extrabold px-2 py-0.5 rounded-full">
-                        Mancano {status.daysRemaining} giorni
-                      </span>
-                    )}
-                  </div>
+                      {!status.isToday && (
+                        <span className="text-[10px] bg-brand-100 text-brand-700 font-extrabold px-2 py-0.5 rounded-full">
+                          Mancano {status.daysRemaining} giorni
+                        </span>
+                      )}
+                    </div>
+                  )}
                 </div>
               );
             })
@@ -360,6 +366,11 @@ export default function CalendarView({ specialDates, encounters, onAddSpecialDat
                   matchesEncounter.map(e => e.title).join(", ") || 
                   matchesSpecial.map(s => s.title).join(", ")
                 }
+                onClick={() => {
+                  if (hasEncounter) {
+                    setSelectedEncounter(matchesEncounter[0]);
+                  }
+                }}
               >
                 {/* Day Number */}
                 <span className={`text-[11px] font-bold leading-none ${
@@ -391,6 +402,177 @@ export default function CalendarView({ specialDates, encounters, onAddSpecialDat
           })}
         </div>
       </div>
+
+      {/* 3. Encounter Details Popover Menu/Modal */}
+      {selectedEncounter && (
+        <div
+          id="encounter-details-modal"
+          className="fixed inset-0 z-40 bg-brand-950/60 backdrop-blur-sm flex items-center justify-center p-4"
+          onClick={() => setSelectedEncounter(null)}
+        >
+          <div
+            className="bg-white w-full max-w-md rounded-3xl overflow-hidden shadow-2xl flex flex-col max-h-[85vh] border border-brand-100 animate-in fade-in zoom-in-95 duration-200"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Modal Header */}
+            <div className="bg-gradient-to-r from-sky-400 to-brand-500 p-5 text-white relative">
+              <button
+                id="close-encounter-modal"
+                onClick={() => setSelectedEncounter(null)}
+                className="absolute top-4 right-4 bg-white/20 hover:bg-white/35 text-white p-1.5 rounded-full transition cursor-pointer"
+                aria-label="Chiudi"
+              >
+                <X className="w-4 h-4" />
+              </button>
+              
+              <div className="flex items-center gap-2 text-sky-100 text-[10px] font-black uppercase tracking-wider">
+                <CalendarIcon className="w-3.5 h-3.5" />
+                <span>
+                  {new Date(selectedEncounter.date).toLocaleDateString("it-IT", {
+                    weekday: "long",
+                    year: "numeric",
+                    month: "long",
+                    day: "numeric",
+                  })}
+                </span>
+              </div>
+              
+              <h4 className="text-lg font-black font-display mt-1 text-white leading-tight">
+                {selectedEncounter.title}
+              </h4>
+            </div>
+
+            {/* Scrollable Content */}
+            <div className="p-5 overflow-y-auto space-y-5">
+              {/* Notes Sections */}
+              <div className="space-y-4">
+                {/* Shared note */}
+                {selectedEncounter.note && (
+                  <div className="bg-brand-50/50 border border-brand-100 rounded-2xl p-4 relative">
+                    <div className="absolute top-3 left-4 text-brand-300">
+                      <MessageSquare className="w-4 h-4 fill-brand-100" />
+                    </div>
+                    <span className="text-[10px] font-bold text-brand-500 pl-6 block mb-1">Nota condivisa</span>
+                    <p className="text-sm text-brand-950 leading-relaxed pl-6 italic font-serif whitespace-pre-wrap break-words">
+                      "{selectedEncounter.note}"
+                    </p>
+                  </div>
+                )}
+
+                {/* Samuel's note */}
+                {selectedEncounter.noteSamuel && (
+                  <div className="p-4 bg-sky-50/60 border border-sky-100 rounded-2xl">
+                    <span className="text-[10px] font-black text-sky-700 block mb-1">👦 Samuel ha scritto:</span>
+                    <p className="text-xs text-sky-950 font-serif italic whitespace-pre-wrap break-words">
+                      "{selectedEncounter.noteSamuel}"
+                    </p>
+                  </div>
+                )}
+
+                {/* Ilenia's note */}
+                {selectedEncounter.noteIle && (
+                  <div className="p-4 bg-rose-50/60 border border-rose-100 rounded-2xl">
+                    <span className="text-[10px] font-black text-rose-700 block mb-1">👧 Ilenia ha scritto:</span>
+                    <p className="text-xs text-rose-950 font-serif italic whitespace-pre-wrap break-words">
+                      "{selectedEncounter.noteIle}"
+                    </p>
+                  </div>
+                )}
+
+                {!selectedEncounter.note && !selectedEncounter.noteSamuel && !selectedEncounter.noteIle && (
+                  <p className="text-center text-xs text-brand-400 italic py-4">Nessuna nota presente per questo giorno.</p>
+                )}
+              </div>
+
+              {/* Photos Gallery Section */}
+              {(() => {
+                const encPhotos: { url: string; uploadedBy?: string }[] = [];
+                if (selectedEncounter.photosWithAuthor && selectedEncounter.photosWithAuthor.length > 0) {
+                  selectedEncounter.photosWithAuthor.forEach(p => {
+                    encPhotos.push({ url: p.url, uploadedBy: p.uploadedBy });
+                  });
+                } else if (selectedEncounter.photos && selectedEncounter.photos.length > 0) {
+                  selectedEncounter.photos.forEach(p => {
+                    encPhotos.push({ url: p, uploadedBy: "Samuel" });
+                  });
+                }
+
+                if (encPhotos.length === 0) return null;
+
+                return (
+                  <div className="space-y-2.5 border-t border-brand-100 pt-4">
+                    <span className="text-xs font-black text-brand-900 flex items-center gap-1.5 uppercase tracking-wider">
+                      <ImageIcon className="w-4 h-4 text-brand-500" />
+                      Foto di quel giorno ({encPhotos.length})
+                    </span>
+                    <div className="grid grid-cols-3 gap-2">
+                      {encPhotos.map((photo, i) => {
+                        const isSamuel = photo.uploadedBy === "Samuel";
+                        return (
+                          <div
+                            key={i}
+                            onClick={() => setActiveLightboxPhoto(photo.url)}
+                            className="aspect-square rounded-xl overflow-hidden border border-brand-100 shadow-sm bg-brand-50 cursor-pointer active:scale-95 hover:opacity-90 transition relative group"
+                          >
+                            <img
+                              src={photo.url}
+                              alt="Scatto dell'incontro"
+                              className="w-full h-full object-cover"
+                              referrerPolicy="no-referrer"
+                            />
+                            {photo.uploadedBy && (
+                              <div className={`absolute bottom-1 right-1 text-[8px] font-bold px-1.5 py-0.5 rounded-full shadow border bg-white flex items-center gap-0.5 ${
+                                isSamuel ? "text-sky-600 border-sky-100" : "text-rose-600 border-rose-100"
+                              }`}>
+                                <span>{isSamuel ? "👦 S" : "👧 I"}</span>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })()}
+            </div>
+
+            {/* Modal Footer */}
+            <div className="p-4 bg-brand-50/50 border-t border-brand-100 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setSelectedEncounter(null)}
+                className="px-4 py-2 bg-brand-500 hover:bg-brand-600 text-white rounded-2xl text-xs font-bold transition shadow-sm cursor-pointer"
+              >
+                Chiudi
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 4. Fullscreen image lightbox for calendar details */}
+      {activeLightboxPhoto && (
+        <div
+          id="calendar-photo-lightbox"
+          onClick={() => setActiveLightboxPhoto(null)}
+          className="fixed inset-0 z-50 bg-black/95 flex flex-col justify-center items-center p-4 cursor-pointer"
+        >
+          <button
+            onClick={() => setActiveLightboxPhoto(null)}
+            className="absolute top-4 right-4 text-white hover:bg-white/10 p-2 rounded-full transition"
+            aria-label="Chiudi foto"
+          >
+            <X className="w-6 h-6" />
+          </button>
+          <img
+            src={activeLightboxPhoto}
+            alt="Ingrandimento foto"
+            className="max-w-full max-h-[85vh] rounded-2xl object-contain shadow-2xl border border-white/10"
+            referrerPolicy="no-referrer"
+          />
+          <p className="text-white/40 text-[10px] mt-4">Tocca un punto qualsiasi per chiudere la foto</p>
+        </div>
+      )}
     </div>
   );
 }

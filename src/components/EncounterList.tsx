@@ -208,7 +208,7 @@ export default function EncounterList({ encounters, onDelete, onEdit, currentUse
                   <div className="absolute top-3 left-4 text-brand-300">
                     <MessageSquare className="w-4 h-4 fill-brand-100" />
                   </div>
-                  <p className="text-sm text-brand-800 leading-relaxed pl-6 italic font-serif">
+                  <p className="text-sm text-brand-800 leading-relaxed pl-6 italic font-serif whitespace-pre-wrap break-words">
                     "{encounter.note}"
                   </p>
                 </div>
@@ -220,7 +220,7 @@ export default function EncounterList({ encounters, onDelete, onEdit, currentUse
                 {encounter.noteSamuel ? (
                   <div className="p-3 bg-sky-50/60 border border-sky-100 rounded-2xl">
                     <span className="text-[10px] font-bold text-sky-700 block mb-0.5">👦 Samuel dice:</span>
-                    <p className="text-xs text-sky-950 font-serif italic">"{encounter.noteSamuel}"</p>
+                    <p className="text-xs text-sky-950 font-serif italic whitespace-pre-wrap break-words">"{encounter.noteSamuel}"</p>
                   </div>
                 ) : (
                   currentUser === "Samuel" && (
@@ -237,7 +237,7 @@ export default function EncounterList({ encounters, onDelete, onEdit, currentUse
                 {encounter.noteIle ? (
                   <div className="p-3 bg-rose-50/60 border border-rose-100 rounded-2xl">
                     <span className="text-[10px] font-bold text-rose-700 block mb-0.5">👧 Ilenia dice:</span>
-                    <p className="text-xs text-rose-950 font-serif italic">"{encounter.noteIle}"</p>
+                    <p className="text-xs text-rose-950 font-serif italic whitespace-pre-wrap break-words">"{encounter.noteIle}"</p>
                   </div>
                 ) : (
                   currentUser === "Ile" && (

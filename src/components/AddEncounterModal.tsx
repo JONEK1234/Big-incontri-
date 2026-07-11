@@ -222,11 +222,11 @@ export default function AddEncounterModal({
             </label>
             <textarea
               id="encounter-note"
-              placeholder="Un riassunto generale o descrizione di quello che avete fatto insieme..."
-              rows={3}
+              placeholder="Un riassunto generale o descrizione di quello che avete fatto insieme... (Premi Invio se desideri andare a capo e creare dello spazio)"
+              rows={4}
               value={note}
               onChange={(e) => setNote(e.target.value)}
-              className="w-full px-4 py-3 bg-brand-50/50 border border-brand-100 rounded-xl text-brand-900 text-sm placeholder:text-brand-300 focus:outline-none focus:ring-2 focus:ring-brand-400 focus:bg-white transition resize-none"
+              className="w-full px-4 py-3 bg-brand-50/50 border border-brand-100 rounded-xl text-brand-900 text-sm placeholder:text-brand-300 focus:outline-none focus:ring-2 focus:ring-brand-400 focus:bg-white transition resize-y min-h-[90px]"
             />
           </div>
 
@@ -255,15 +255,16 @@ export default function AddEncounterModal({
               </div>
               <textarea
                 id="encounter-note-samuel"
+                disabled={currentUser !== "Samuel"}
                 placeholder={
                   currentUser === "Samuel"
-                    ? "Samuel, aggiungi il tuo pensiero o dedica speciale a questo giorno..."
+                    ? "Samuel, aggiungi il tuo pensiero... (Premi Invio per lasciare dello spazio)"
                     : "Ancora nessun pensiero da parte di Samuel."
                 }
-                rows={2}
+                rows={3}
                 value={noteSamuel}
                 onChange={(e) => setNoteSamuel(e.target.value)}
-                className="w-full p-2 bg-white/90 border border-brand-100 rounded-lg text-brand-900 text-xs placeholder:text-brand-300 focus:outline-none focus:ring-2 focus:ring-sky-400 transition resize-none"
+                className="w-full p-2 bg-white/90 border border-brand-100 rounded-lg text-brand-900 text-xs placeholder:text-brand-300 focus:outline-none focus:ring-2 focus:ring-sky-400 transition resize-y"
               />
             </div>
 
@@ -285,15 +286,16 @@ export default function AddEncounterModal({
               </div>
               <textarea
                 id="encounter-note-ile"
+                disabled={currentUser !== "Ile"}
                 placeholder={
                   currentUser === "Ile"
-                    ? "Ilenia, aggiungi il tuo pensiero o dedica speciale a questo giorno..."
+                    ? "Ilenia, aggiungi il tuo pensiero... (Premi Invio per lasciare dello spazio)"
                     : "Ancora nessun pensiero da parte di Ilenia."
                 }
-                rows={2}
+                rows={3}
                 value={noteIle}
                 onChange={(e) => setNoteIle(e.target.value)}
-                className="w-full p-2 bg-white/90 border border-brand-100 rounded-lg text-brand-900 text-xs placeholder:text-brand-300 focus:outline-none focus:ring-2 focus:ring-rose-400 transition resize-none"
+                className="w-full p-2 bg-white/90 border border-brand-100 rounded-lg text-brand-900 text-xs placeholder:text-brand-300 focus:outline-none focus:ring-2 focus:ring-rose-400 transition resize-y"
               />
             </div>
           </div>
