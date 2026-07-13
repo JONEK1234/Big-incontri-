@@ -1,7 +1,8 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
+import { createPortal } from "react-dom";
 import { SpecialDate, Encounter } from "../types";
 import { getAnniversaryStatus } from "../utils/anniversaryHelper";
-import { Calendar as CalendarIcon, Star, Gift, Heart, CalendarDays, Plus, Trash2, ArrowRight, Sparkles, X, MessageSquare, ImageIcon } from "lucide-react";
+import { Calendar as CalendarIcon, Star, Gift, Heart, CalendarDays, Plus, Trash2, ArrowRight, Sparkles, X, MessageSquare, ImageIcon, ChevronLeft, ChevronRight } from "lucide-react";
 
 interface CalendarViewProps {
   specialDates: SpecialDate[];
@@ -20,7 +21,81 @@ export default function CalendarView({ specialDates, encounters, onAddSpecialDat
 
   // Encounter detailed view popover
   const [selectedEncounter, setSelectedEncounter] = useState<Encounter | null>(null);
-  const [activeLightboxPhoto, setActiveLightboxPhoto] = useState<string | null>(null);
+  const [activeLightboxIndex, setActiveLightboxIndex] = useState<number | null>(null);
+  const [lightboxTouchStartX, setLightboxTouchStartX] = useState<number | null>(null);
+  const [lightboxTouchEndX, setLightboxTouchEndX] = useState<number | null>(null);
+
+  // Get photos list of currently opened encounter
+  const currentEncounterPhotos = selectedEncounter ? (() => {
+    const encPhotos: { url: string; uploadedBy?: string }[] = [];
+    if (selectedEncounter.photosWithAuthor && selectedEncounter.photosWithAuthor.length > 0) {
+      selectedEncounter.photosWithAuthor.forEach(p => {
+        encPhotos.push({ url: p.url, uploadedBy: p.uploadedBy });
+      });
+    } else if (selectedEncounter.photos && selectedEncounter.photos.length > 0) {
+      selectedEncounter.photos.forEach(p => {
+        encPhotos.push({ url: p, uploadedBy: "Samuel" });
+      });
+    }
+    return encPhotos;
+  })() : [];
+
+  const handleLightboxNext = () => {
+    if (activeLightboxIndex !== null && currentEncounterPhotos.length > 0) {
+      setActiveLightboxIndex((prev) => (prev! + 1) % currentEncounterPhotos.length);
+    }
+  };
+
+  const handleLightboxPrev = () => {
+    if (activeLightboxIndex !== null && currentEncounterPhotos.length > 0) {
+      setActiveLightboxIndex((prev) => (prev! - 1 + currentEncounterPhotos.length) % currentEncounterPhotos.length);
+    }
+  };
+
+  // Touch Swipe handlers for Calendar Lightbox
+  const handleLightboxTouchStart = (e: React.TouchEvent) => {
+    setLightboxTouchStartX(e.targetTouches[0].clientX);
+    setLightboxTouchEndX(null);
+  };
+
+  const handleLightboxTouchMove = (e: React.TouchEvent) => {
+    setLightboxTouchEndX(e.targetTouches[0].clientX);
+  };
+
+  const handleLightboxTouchEnd = () => {
+    if (lightboxTouchStartX === null || lightboxTouchEndX === null) return;
+    const diffX = lightboxTouchStartX - lightboxTouchEndX;
+    const swipeThreshold = 50;
+
+    if (diffX > swipeThreshold) {
+      handleLightboxNext();
+    } else if (diffX < -swipeThreshold) {
+      handleLightboxPrev();
+    }
+
+    setLightboxTouchStartX(null);
+    setLightboxTouchEndX(null);
+  };
+
+  // Keyboard navigation for Calendar Lightbox
+  useEffect(() => {
+    if (activeLightboxIndex === null) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "ArrowRight") {
+        handleLightboxNext();
+      } else if (e.key === "ArrowLeft") {
+        handleLightboxPrev();
+      } else if (e.key === "Escape") {
+        setActiveLightboxIndex(null);
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [activeLightboxIndex, currentEncounterPhotos.length]);
 
   // Calendar rendering state
   const today = new Date();
@@ -511,7 +586,7 @@ export default function CalendarView({ specialDates, encounters, onAddSpecialDat
                         return (
                           <div
                             key={i}
-                            onClick={() => setActiveLightboxPhoto(photo.url)}
+                            onClick={() => setActiveLightboxIndex(i)}
                             className="aspect-square rounded-xl overflow-hidden border border-brand-100 shadow-sm bg-brand-50 cursor-pointer active:scale-95 hover:opacity-90 transition relative group"
                           >
                             <img
@@ -550,28 +625,103 @@ export default function CalendarView({ specialDates, encounters, onAddSpecialDat
         </div>
       )}
 
-      {/* 4. Fullscreen image lightbox for calendar details */}
-      {activeLightboxPhoto && (
+      {/* 4. Fullscreen image lightbox with navigation & swipe for Calendar view */}
+      {activeLightboxIndex !== null && currentEncounterPhotos[activeLightboxIndex] && typeof document !== "undefined" && createPortal(
         <div
           id="calendar-photo-lightbox"
-          onClick={() => setActiveLightboxPhoto(null)}
-          className="fixed inset-0 z-50 bg-black/95 flex flex-col justify-center items-center p-4 cursor-pointer"
+          className="fixed inset-0 z-[9999] bg-black/95 flex items-center justify-center select-none touch-none animate-in fade-in duration-200"
+          onTouchStart={handleLightboxTouchStart}
+          onTouchMove={handleLightboxTouchMove}
+          onTouchEnd={handleLightboxTouchEnd}
+          onClick={() => setActiveLightboxIndex(null)}
         >
+          {/* Top-Right Close Button */}
           <button
-            onClick={() => setActiveLightboxPhoto(null)}
-            className="absolute top-4 right-4 text-white hover:bg-white/10 p-2 rounded-full transition"
+            onClick={() => setActiveLightboxIndex(null)}
+            className="absolute top-4 right-4 p-2.5 rounded-full bg-neutral-900/80 hover:bg-neutral-800 border border-white/10 text-white transition-colors cursor-pointer z-50 shadow-lg"
             aria-label="Chiudi foto"
           >
-            <X className="w-6 h-6" />
+            <X className="w-5 h-5" />
           </button>
-          <img
-            src={activeLightboxPhoto}
-            alt="Ingrandimento foto"
-            className="max-w-full max-h-[85vh] rounded-2xl object-contain shadow-2xl border border-white/10"
-            referrerPolicy="no-referrer"
-          />
-          <p className="text-white/40 text-[10px] mt-4">Tocca un punto qualsiasi per chiudere la foto</p>
-        </div>
+
+          {/* Left Arrow Button */}
+          {currentEncounterPhotos.length > 1 && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                handleLightboxPrev();
+              }}
+              className="absolute left-4 top-1/2 -translate-y-1/2 z-50 text-white/80 hover:text-white bg-neutral-900/80 hover:bg-neutral-800 border border-white/10 p-3 rounded-full transition active:scale-95 hidden md:flex items-center justify-center cursor-pointer shadow-lg"
+              aria-label="Precedente"
+            >
+              <ChevronLeft className="w-6 h-6" />
+            </button>
+          )}
+
+          {/* Right Arrow Button */}
+          {currentEncounterPhotos.length > 1 && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                handleLightboxNext();
+              }}
+              className="absolute right-4 top-1/2 -translate-y-1/2 z-50 text-white/80 hover:text-white bg-neutral-900/80 hover:bg-neutral-800 border border-white/10 p-3 rounded-full transition active:scale-95 hidden md:flex items-center justify-center cursor-pointer shadow-lg"
+              aria-label="Successivo"
+            >
+              <ChevronRight className="w-6 h-6" />
+            </button>
+          )}
+
+          {/* Centered Image Container (Full screen, true fullscreen) */}
+          <div 
+            className="w-full h-full flex items-center justify-center p-2 animate-in zoom-in-95 duration-200"
+            onClick={() => setActiveLightboxIndex(null)}
+          >
+            <img
+              src={currentEncounterPhotos[activeLightboxIndex].url}
+              alt="Ingrandimento foto"
+              className="max-w-full max-h-full object-contain rounded-lg shadow-2xl select-none"
+              referrerPolicy="no-referrer"
+              onClick={(e) => e.stopPropagation()}
+            />
+
+            {/* Subtle floating overlay at the bottom */}
+            <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-40 pointer-events-none text-center">
+              <div className="bg-neutral-900/90 backdrop-blur-md border border-white/10 px-4 py-2 rounded-2xl flex flex-col items-center gap-0.5 shadow-2xl max-w-[90vw]">
+                {selectedEncounter?.title && (
+                  <p className="text-white text-xs font-extrabold tracking-wide truncate max-w-[220px]">
+                    {selectedEncounter.title}
+                  </p>
+                )}
+                <div className="flex items-center gap-1.5 text-[10px] text-white/60 font-medium">
+                  <span className="font-bold text-white/80">{activeLightboxIndex + 1} di {currentEncounterPhotos.length}</span>
+                  <span>•</span>
+                  <span>
+                    {selectedEncounter && new Date(selectedEncounter.date).toLocaleDateString("it-IT", {
+                      year: "numeric",
+                      month: "short",
+                      day: "numeric"
+                    })}
+                  </span>
+                  {currentEncounterPhotos[activeLightboxIndex].uploadedBy && (
+                    <>
+                      <span>•</span>
+                      <span className={currentEncounterPhotos[activeLightboxIndex].uploadedBy === "Samuel" ? "text-sky-300" : "text-rose-300"}>
+                        {currentEncounterPhotos[activeLightboxIndex].uploadedBy}
+                      </span>
+                    </>
+                  )}
+                </div>
+              </div>
+              {currentEncounterPhotos.length > 1 && (
+                <span className="text-white/30 text-[9px] font-medium tracking-wide mt-2 block md:hidden">
+                  ← Scorri per cambiare foto →
+                </span>
+              )}
+            </div>
+          </div>
+        </div>,
+        document.body
       )}
     </div>
   );

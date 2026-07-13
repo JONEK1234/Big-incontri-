@@ -13,6 +13,10 @@
           "type": "array",
           "items": { "type": "string" }
         },
+        "stickers": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
         "createdAt": { "type": "string", "format": "date-time" }
       },
       "required": ["date", "title", "createdAt"]

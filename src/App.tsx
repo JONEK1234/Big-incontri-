@@ -11,7 +11,7 @@ import {
   getDocs,
   updateDoc,
 } from "firebase/firestore";
-import { Encounter, SpecialDate, LoveMessage, EncounterPhoto } from "./types";
+import { Encounter, SpecialDate, LoveMessage, EncounterPhoto, Sticker } from "./types";
 import BottomNav from "./components/BottomNav";
 import UserSelector from "./components/UserSelector";
 import EncounterList from "./components/EncounterList";
@@ -36,6 +36,7 @@ export default function App() {
   const [encounterToEdit, setEncounterToEdit] = useState<Encounter | null>(null);
 
   const [encounters, setEncounters] = useState<Encounter[]>([]);
+  const [stickers, setStickers] = useState<Sticker[]>([]);
   const [specialDates, setSpecialDates] = useState<SpecialDate[]>([]);
   const [loveMessages, setLoveMessages] = useState<LoveMessage[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -65,6 +66,7 @@ export default function App() {
           noteIle: data.noteIle || "",
           photos: data.photos || [],
           photosWithAuthor: data.photosWithAuthor || [],
+          stickers: data.stickers || [],
           createdAt: data.createdAt || "",
         });
       });
@@ -123,6 +125,30 @@ export default function App() {
       setLoveMessages(list);
     }, (error) => {
       console.error("Error listening to love messages:", error);
+    });
+
+    return () => unsubscribe();
+  }, []);
+
+  // Firestore real-time sync for Stickers
+  useEffect(() => {
+    const q = query(collection(db, "stickers"), orderBy("createdAt", "desc"));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const list: Sticker[] = [];
+      snapshot.forEach((doc) => {
+        const data = doc.data();
+        list.push({
+          id: doc.id,
+          url: data.url || "",
+          title: data.title || "",
+          uploadedBy: data.uploadedBy || "",
+          associatedMeetingIds: data.associatedMeetingIds || [],
+          createdAt: data.createdAt || "",
+        });
+      });
+      setStickers(list);
+    }, (error) => {
+      console.error("Error listening to stickers:", error);
     });
 
     return () => unsubscribe();
@@ -191,6 +217,7 @@ export default function App() {
           noteIle: enc.noteIle || "",
           photos: enc.photos || [],
           photosWithAuthor: enc.photosWithAuthor || [],
+          stickers: [],
           createdAt: new Date().toISOString(),
         });
       }
@@ -252,6 +279,7 @@ export default function App() {
         return (
           <EncounterList
             encounters={encounters}
+            stickers={stickers}
             onDelete={handleDeleteEncounter}
             onEdit={(encounter) => {
               setEncounterToEdit(encounter);

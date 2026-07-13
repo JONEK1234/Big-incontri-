@@ -1,17 +1,184 @@
-import React, { useState } from "react";
-import { Encounter } from "../types";
+import React, { useState, useEffect } from "react";
+import { createPortal } from "react-dom";
+import { Encounter, Sticker } from "../types";
 import { calculateDaysBetween, formatDuration } from "../utils/imageCompressor";
-import { Calendar, Trash2, Edit2, Heart, MessageSquare, ChevronRight, Image as ImageIcon, Eye, Sparkles } from "lucide-react";
+import { Calendar, Trash2, Edit2, Heart, MessageSquare, ChevronLeft, ChevronRight, Image as ImageIcon, Eye, Sparkles, X, Smile, Plus, Upload, Link2, ExternalLink } from "lucide-react";
+import { db } from "../firebase";
+import { doc, updateDoc, addDoc, deleteDoc, collection } from "firebase/firestore";
+import { compressImage } from "../utils/imageCompressor";
 
 interface EncounterListProps {
   encounters: Encounter[];
+  stickers?: Sticker[];
   onDelete: (id: string) => Promise<void>;
   onEdit: (encounter: Encounter) => void;
   currentUser: string;
 }
 
-export default function EncounterList({ encounters, onDelete, onEdit, currentUser }: EncounterListProps) {
-  const [selectedPhoto, setSelectedPhoto] = useState<{ url: string; uploadedBy: string } | null>(null);
+export default function EncounterList({ encounters, stickers = [], onDelete, onEdit, currentUser }: EncounterListProps) {
+  const [lightboxPhotos, setLightboxPhotos] = useState<{ url: string; uploadedBy: string }[]>([]);
+  const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
+  const [touchStartX, setTouchStartX] = useState<number | null>(null);
+  const [touchEndX, setTouchEndX] = useState<number | null>(null);
+
+  // Custom Sticker Gallery states
+  const [isStickerGalleryOpen, setIsStickerGalleryOpen] = useState(false);
+  const [isUploaderExpanded, setIsUploaderExpanded] = useState(false);
+  const [stickerFilter, setStickerFilter] = useState<string>("all");
+  const [isUploadingSticker, setIsUploadingSticker] = useState(false);
+  const [uploadStickerTitle, setUploadStickerTitle] = useState("");
+  const [uploadStickerMeetingIds, setUploadStickerMeetingIds] = useState<string[]>([]);
+  const [selectedDetailSticker, setSelectedDetailSticker] = useState<Sticker | null>(null);
+  const [isLinkingOpen, setIsLinkingOpen] = useState(false); // To toggle linking drawer for selected sticker
+  const [deleteConfirmation, setDeleteConfirmation] = useState<{
+    type: "encounter" | "sticker";
+    id: string;
+    title: string;
+  } | null>(null);
+
+  const handleUploadSticker = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+
+    setIsUploadingSticker(true);
+
+    try {
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        const compressedBase64 = await compressImage(file, 400, 400, 0.7);
+        
+        const fileTitle = files.length === 1
+          ? (uploadStickerTitle.trim() || file.name.split(".")[0] || "Adesivo ricordo")
+          : (uploadStickerTitle.trim() 
+              ? `${uploadStickerTitle.trim()} (${i + 1})` 
+              : (file.name.split(".")[0] || `Adesivo ricordo ${i + 1}`));
+
+        await addDoc(collection(db, "stickers"), {
+          url: compressedBase64,
+          title: fileTitle,
+          uploadedBy: currentUser,
+          associatedMeetingIds: uploadStickerMeetingIds,
+          createdAt: new Date().toISOString(),
+        });
+      }
+
+      // Reset
+      setUploadStickerTitle("");
+      setUploadStickerMeetingIds([]);
+      setIsUploaderExpanded(false);
+    } catch (error) {
+      console.error("Errore nel caricamento degli adesivi:", error);
+    } finally {
+      setIsUploadingSticker(false);
+    }
+  };
+
+  const handleDeleteSticker = (stickerId: string, title: string) => {
+    setDeleteConfirmation({
+      type: "sticker",
+      id: stickerId,
+      title: title,
+    });
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!deleteConfirmation) return;
+
+    try {
+      if (deleteConfirmation.type === "sticker") {
+        await deleteDoc(doc(db, "stickers", deleteConfirmation.id));
+        setSelectedDetailSticker(null);
+        setIsLinkingOpen(false);
+      } else if (deleteConfirmation.type === "encounter") {
+        await onDelete(deleteConfirmation.id);
+      }
+    } catch (error) {
+      console.error("Errore durante l'eliminazione:", error);
+    } finally {
+      setDeleteConfirmation(null);
+    }
+  };
+
+  const handleToggleStickerAssociation = async (sticker: Sticker, meetingId: string) => {
+    const currentAssociations = sticker.associatedMeetingIds || [];
+    let newAssociations: string[];
+
+    if (currentAssociations.includes(meetingId)) {
+      newAssociations = currentAssociations.filter((id) => id !== meetingId);
+    } else {
+      newAssociations = [...currentAssociations, meetingId];
+    }
+
+    try {
+      const stickerRef = doc(db, "stickers", sticker.id);
+      await updateDoc(stickerRef, {
+        associatedMeetingIds: newAssociations,
+      });
+
+      // Update local detailed sticker view state if open
+      if (selectedDetailSticker && selectedDetailSticker.id === sticker.id) {
+        setSelectedDetailSticker({
+          ...selectedDetailSticker,
+          associatedMeetingIds: newAssociations,
+        });
+      }
+    } catch (error) {
+      console.error("Errore durante l'aggiornamento dell'associazione:", error);
+    }
+  };
+
+  const handleNext = () => {
+    if (lightboxIndex !== null && lightboxPhotos.length > 0) {
+      setLightboxIndex((prev) => (prev! + 1) % lightboxPhotos.length);
+    }
+  };
+
+  const handlePrev = () => {
+    if (lightboxIndex !== null && lightboxPhotos.length > 0) {
+      setLightboxIndex((prev) => (prev! - 1 + lightboxPhotos.length) % lightboxPhotos.length);
+    }
+  };
+
+  const handleTouchStart = (e: React.TouchEvent) => {
+    setTouchStartX(e.targetTouches[0].clientX);
+    setTouchEndX(null);
+  };
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    setTouchEndX(e.targetTouches[0].clientX);
+  };
+
+  const handleTouchEnd = () => {
+    if (touchStartX === null || touchEndX === null) return;
+    const diffX = touchStartX - touchEndX;
+    const swipeThreshold = 50;
+
+    if (diffX > swipeThreshold) {
+      handleNext();
+    } else if (diffX < -swipeThreshold) {
+      handlePrev();
+    }
+
+    setTouchStartX(null);
+    setTouchEndX(null);
+  };
+
+  // Close lightbox on Escape key and support arrows
+  useEffect(() => {
+    if (lightboxIndex === null) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setLightboxIndex(null);
+      } else if (e.key === "ArrowRight") {
+        handleNext();
+      } else if (e.key === "ArrowLeft") {
+        handlePrev();
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [lightboxIndex, lightboxPhotos.length]);
 
   // 1. Sort encounters chronologically ASCENDING to calculate absolute encounter numbers and durations
   const sortedChronological = [...encounters].sort(
@@ -91,11 +258,34 @@ export default function EncounterList({ encounters, onDelete, onEdit, currentUse
         </div>
       </div>
 
+      {/* Custom Sticker Gallery Quick Access */}
+      <div
+        id="sticker-gallery-trigger"
+        onClick={() => setIsStickerGalleryOpen(true)}
+        className="bg-gradient-to-r from-amber-50 to-orange-50/60 hover:from-amber-100 hover:to-orange-100/75 border border-amber-200/70 p-4 rounded-2xl flex items-center justify-between shadow-xs cursor-pointer transition duration-200 hover:shadow-sm active:scale-[0.98]"
+      >
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-amber-500 flex items-center justify-center text-white shadow-xs">
+            <Smile className="w-5.5 h-5.5" />
+          </div>
+          <div className="space-y-0.5">
+            <h3 className="text-xs font-black text-amber-950 font-display tracking-tight uppercase">Bacheca Adesivi Ricordo ✨</h3>
+            <p className="text-[10px] text-amber-700 font-bold uppercase tracking-wider">
+              {stickers.length} {stickers.length === 1 ? "adesivo personalizzato" : "adesivi personalizzati"} • Vedi Tutti
+            </p>
+          </div>
+        </div>
+        <ChevronRight className="w-5 h-5 text-amber-600" />
+      </div>
+
       {/* Main List */}
       <div className="space-y-5">
         {sortedRecent.map((encounter) => {
           const meta = encounterMeta.get(encounter.id);
           const hasPhotos = encounter.photos && encounter.photos.length > 0;
+          const customStickersForThisEncounter = stickers.filter((st) =>
+            st.associatedMeetingIds?.includes(encounter.id)
+          );
 
           return (
             <div
@@ -139,9 +329,11 @@ export default function EncounterList({ encounters, onDelete, onEdit, currentUse
                     <button
                       id={`delete-btn-${encounter.id}`}
                       onClick={() => {
-                        if (window.confirm("Sei sicuro di voler eliminare questo ricordo?")) {
-                          onDelete(encounter.id);
-                        }
+                        setDeleteConfirmation({
+                          type: "encounter",
+                          id: encounter.id,
+                          title: encounter.title,
+                        });
                       }}
                       className="p-2 text-brand-300 hover:text-red-500 hover:bg-red-50 rounded-full transition"
                       title="Elimina ricordo"
@@ -157,6 +349,31 @@ export default function EncounterList({ encounters, onDelete, onEdit, currentUse
                   <Calendar className="w-3.5 h-3.5" />
                   <span>{formatDateLabel(encounter.date)}</span>
                 </div>
+
+                {/* Stickers Row */}
+                {customStickersForThisEncounter.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5 mt-3 animate-in fade-in duration-300">
+                    {/* Custom Image Stickers */}
+                    {customStickersForThisEncounter.map((st) => (
+                      <span
+                        key={st.id}
+                        onClick={() => {
+                          setSelectedDetailSticker(st);
+                          setIsStickerGalleryOpen(true);
+                        }}
+                        className="inline-flex items-center gap-1.5 pl-1.5 pr-2.5 py-1 bg-white border border-amber-200 hover:border-amber-400 rounded-full text-xs font-bold text-amber-900 shadow-xs transition hover:scale-105 active:scale-95 cursor-pointer select-none"
+                        title={`${st.title} • Caricata da ${st.uploadedBy}. Clicca per visualizzare`}
+                      >
+                        <img
+                          src={st.url}
+                          alt={st.title}
+                          className="w-4 h-4 rounded-md object-cover border border-amber-50"
+                        />
+                        <span className="text-[9px] font-bold uppercase tracking-wider">{st.title}</span>
+                      </span>
+                    ))}
+                  </div>
+                )}
               </div>
 
               {/* Photos Gallery */}
@@ -173,7 +390,10 @@ export default function EncounterList({ encounters, onDelete, onEdit, currentUse
                         return (
                           <div
                             key={pIdx}
-                            onClick={() => setSelectedPhoto(photo)}
+                            onClick={() => {
+                              setLightboxPhotos(displayPhotos);
+                              setLightboxIndex(pIdx);
+                            }}
                             className={`relative flex-shrink-0 w-24 h-24 rounded-2xl overflow-hidden border-2 snap-center cursor-pointer active:scale-95 transition ${
                               isSamuel ? "border-sky-200" : "border-rose-200"
                             }`}
@@ -268,31 +488,518 @@ export default function EncounterList({ encounters, onDelete, onEdit, currentUse
       </div>
 
       {/* Fullscreen Photo Lightbox Modal */}
-      {selectedPhoto && (
+      {lightboxIndex !== null && lightboxPhotos[lightboxIndex] && typeof document !== "undefined" && createPortal(
         <div
           id="photo-lightbox"
-          onClick={() => setSelectedPhoto(null)}
-          className="fixed inset-0 z-50 bg-black/95 flex flex-col justify-center items-center p-4 cursor-pointer"
+          className="fixed inset-0 z-[9999] bg-black/95 flex items-center justify-center select-none touch-none animate-in fade-in duration-200"
+          onTouchStart={handleTouchStart}
+          onTouchMove={handleTouchMove}
+          onTouchEnd={handleTouchEnd}
+          onClick={() => setLightboxIndex(null)}
         >
-          <div className="absolute top-4 right-4 text-white hover:bg-white/10 p-2 rounded-full transition">
-            <XIcon className="w-6 h-6" />
-          </div>
-          <img
-            src={selectedPhoto.url}
-            alt="Expanded memory"
-            className="max-w-full max-h-[75vh] rounded-2xl object-contain shadow-2xl"
-          />
-          
-          <div className={`mt-4 px-4 py-1.5 rounded-full text-xs font-bold border ${
-            selectedPhoto.uploadedBy === "Samuel"
-              ? "bg-sky-500/20 text-sky-200 border-sky-500/30"
-              : "bg-rose-500/20 text-rose-200 border-rose-500/30"
-          }`} onClick={(e) => e.stopPropagation()}>
-            Caricata da: {selectedPhoto.uploadedBy === "Samuel" ? "👦 Samuel" : "👧 Ilenia"}
-          </div>
+          {/* Top-Right Close Button */}
+          <button
+            onClick={() => setLightboxIndex(null)}
+            className="absolute top-4 right-4 p-2.5 rounded-full bg-neutral-900/80 hover:bg-neutral-800 border border-white/10 text-white transition-colors cursor-pointer z-50 shadow-lg"
+            aria-label="Chiudi foto"
+          >
+            <X className="w-5 h-5" />
+          </button>
 
-          <p className="text-white/40 text-[10px] mt-4">Clicca in qualsiasi punto per chiudere</p>
-        </div>
+          {/* Navigation Arrows for desktop */}
+          {lightboxPhotos.length > 1 && (
+            <>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handlePrev();
+                }}
+                className="absolute left-4 top-1/2 -translate-y-1/2 z-50 text-white/80 hover:text-white bg-neutral-900/80 hover:bg-neutral-800 border border-white/10 p-3 rounded-full transition active:scale-95 hidden md:flex items-center justify-center cursor-pointer shadow-lg"
+                aria-label="Precedente"
+              >
+                <ChevronLeft className="w-6 h-6" />
+              </button>
+
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleNext();
+                }}
+                className="absolute right-4 top-1/2 -translate-y-1/2 z-50 text-white/80 hover:text-white bg-neutral-900/80 hover:bg-neutral-800 border border-white/10 p-3 rounded-full transition active:scale-95 hidden md:flex items-center justify-center cursor-pointer shadow-lg"
+                aria-label="Successivo"
+              >
+                <ChevronRight className="w-6 h-6" />
+              </button>
+            </>
+          )}
+
+          {/* Centered Image Container (Full screen, true fullscreen) */}
+          <div 
+            className="w-full h-full flex items-center justify-center p-2 animate-in zoom-in-95 duration-200"
+            onClick={() => setLightboxIndex(null)}
+          >
+            <img
+              src={lightboxPhotos[lightboxIndex].url}
+              alt="Expanded memory"
+              className="max-w-full max-h-full object-contain rounded-lg shadow-2xl select-none"
+              referrerPolicy="no-referrer"
+              onClick={(e) => e.stopPropagation()}
+            />
+
+            {/* Subtle floating overlay at the bottom */}
+            <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-40 pointer-events-none text-center">
+              <div className="bg-neutral-900/90 backdrop-blur-md border border-white/10 px-4 py-2 rounded-2xl flex flex-col items-center gap-0.5 shadow-2xl max-w-[90vw]">
+                <p className="text-white text-xs font-extrabold tracking-wide">
+                  Immagine ricordo {lightboxPhotos.length > 1 && `(${lightboxIndex + 1}/${lightboxPhotos.length})`}
+                </p>
+                <div className="flex items-center gap-1.5 text-[10px] text-white/60 font-medium">
+                  <span className={lightboxPhotos[lightboxIndex].uploadedBy === "Samuel" ? "text-sky-300" : "text-rose-300"}>
+                    Caricata da {lightboxPhotos[lightboxIndex].uploadedBy === "Samuel" ? "Samuel" : "Ilenia"}
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
+
+
+      {/* COMPREHENSIVE STICKER GALLERY PORTAL */}
+      {isStickerGalleryOpen && typeof document !== "undefined" && createPortal(
+        <div
+          id="sticker-gallery-overlay"
+          className="fixed inset-0 z-[9000] bg-sky-50 flex justify-center items-stretch select-none animate-in fade-in duration-300"
+        >
+          <div
+            id="sticker-gallery-sheet"
+            className="w-full max-w-md bg-slate-50 shadow-2xl border-x border-brand-100 flex flex-col h-full animate-in slide-in-from-right duration-300 relative"
+          >
+            {/* Title & Close Header */}
+            <div className="px-5 py-4 border-b border-brand-100/60 bg-white flex items-center justify-between shadow-sm shrink-0">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-full bg-brand-500 flex items-center justify-center text-white shadow-sm">
+                  <Sparkles className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-base font-black text-brand-950 font-display">Bacheca Adesivi 🎨</h3>
+                  <p className="text-[9px] text-brand-400 font-bold uppercase tracking-wider">
+                    I vostri sticker e foto ricordo
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setIsStickerGalleryOpen(false)}
+                className="p-1.5 rounded-full bg-neutral-100 hover:bg-neutral-200 text-neutral-600 transition-colors cursor-pointer flex items-center justify-center"
+                aria-label="Chiudi galleria"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Scrollable container for Upload and Sticker Grid */}
+            <div className="flex-1 overflow-y-auto p-5 space-y-5">
+              
+              {/* UPLOADER CARD TRIGGER OR EXPANDED */}
+              {!isUploaderExpanded ? (
+                <button
+                  onClick={() => setIsUploaderExpanded(true)}
+                  className="w-full bg-gradient-to-r from-brand-50 to-amber-50 hover:from-brand-100 hover:to-amber-100 border border-brand-100 p-3.5 rounded-2xl flex items-center justify-between shadow-xs transition duration-200 active:scale-[0.99] cursor-pointer animate-in fade-in duration-300"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 rounded-xl bg-brand-500 flex items-center justify-center text-white shadow-xs">
+                      <Plus className="w-4 h-4" />
+                    </div>
+                    <div className="text-left">
+                      <h4 className="text-xs font-black text-brand-950 font-display tracking-tight uppercase">Nuovo Sticker Ricordo 🎨</h4>
+                      <p className="text-[9px] text-brand-600 font-bold uppercase tracking-wider">Carica foto per creare adesivi</p>
+                    </div>
+                  </div>
+                  <ChevronRight className="w-4 h-4 text-brand-600" />
+                </button>
+              ) : (
+                <div className="bg-white border border-brand-100 p-4 rounded-2xl shadow-xs space-y-4 relative animate-in fade-in duration-200">
+                  <button
+                    onClick={() => setIsUploaderExpanded(false)}
+                    className="absolute top-3.5 right-3.5 p-1 rounded-full bg-brand-50 hover:bg-brand-100 text-brand-600 cursor-pointer transition"
+                    title="Riduci"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                  <div className="flex items-center gap-2 text-brand-950">
+                    <Upload className="w-4 h-4 text-brand-500" />
+                    <h4 className="text-xs font-black uppercase tracking-wider">Aggiungi Nuovo Sticker</h4>
+                  </div>
+
+                  <div className="space-y-3">
+                    {/* Title input */}
+                    <div className="space-y-1">
+                      <label htmlFor="upload-sticker-title" className="text-[10px] font-bold text-neutral-500 uppercase tracking-wider">
+                        Nome dell'Adesivo (Es: "Cena Sushi 🍣")
+                      </label>
+                      <input
+                        id="upload-sticker-title"
+                        type="text"
+                        value={uploadStickerTitle}
+                        onChange={(e) => setUploadStickerTitle(e.target.value)}
+                        placeholder="Dai un titolo a questo sticker..."
+                        className="w-full text-xs p-2.5 bg-neutral-50 rounded-xl border border-neutral-200 focus:outline-none focus:ring-1 focus:ring-brand-500 focus:bg-white text-neutral-800"
+                      />
+                    </div>
+
+                    {/* Horizontal swipe encounters picker */}
+                    {encounters.length > 0 && (
+                      <div className="space-y-1.5">
+                        <label className="text-[10px] font-bold text-neutral-500 uppercase tracking-wider block">
+                          Collega a uno o più Incontri (Opzionale)
+                        </label>
+                        <div className="flex gap-2 overflow-x-auto py-1 scrollbar-none snap-x">
+                          {encounters.map((enc) => {
+                            const isSelected = uploadStickerMeetingIds.includes(enc.id);
+                            return (
+                              <button
+                                type="button"
+                                key={enc.id}
+                                onClick={() => {
+                                  if (isSelected) {
+                                    setUploadStickerMeetingIds(prev => prev.filter(id => id !== enc.id));
+                                  } else {
+                                    setUploadStickerMeetingIds(prev => [...prev, enc.id]);
+                                  }
+                                }}
+                                className={`flex-shrink-0 snap-center px-3 py-1.5 rounded-xl border text-[10px] font-bold transition flex items-center gap-1 cursor-pointer ${
+                                  isSelected
+                                    ? "bg-amber-100 border-amber-300 text-amber-950 shadow-xs"
+                                    : "bg-white border-neutral-200 text-neutral-700 hover:bg-neutral-50"
+                                }`}
+                              >
+                                <Calendar className="w-3 h-3" />
+                                <span>{enc.date.split("-").reverse().join("/")} - {enc.title}</span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Upload button wrapper */}
+                    <label className={`w-full flex flex-col items-center justify-center p-4 border-2 border-dashed rounded-2xl transition cursor-pointer ${
+                      isUploadingSticker 
+                        ? "border-neutral-300 bg-neutral-50 text-neutral-400" 
+                        : "border-brand-200 hover:border-brand-400 bg-brand-50/25 hover:bg-brand-50/50 text-brand-600"
+                    }`}>
+                      {isUploadingSticker ? (
+                        <div className="flex flex-col items-center gap-2">
+                          <div className="w-5 h-5 border-2 border-brand-500 border-t-transparent rounded-full animate-spin" />
+                          <span className="text-[11px] font-bold">Compressione e caricamento...</span>
+                        </div>
+                      ) : (
+                        <div className="flex flex-col items-center gap-1 text-center">
+                          <Plus className="w-5 h-5 mb-0.5" />
+                          <span className="text-xs font-black uppercase tracking-wider">Seleziona Immagini Sticker</span>
+                          <span className="text-[9px] text-neutral-400">Puoi selezionare più immagini contemporaneamente!</span>
+                        </div>
+                      )}
+                      <input
+                        type="file"
+                        accept="image/*"
+                        multiple
+                        onChange={handleUploadSticker}
+                        disabled={isUploadingSticker}
+                        className="hidden"
+                      />
+                    </label>
+                  </div>
+                </div>
+              )}
+
+              {/* STICKER FILTER TABS */}
+              <div className="flex gap-1.5 p-1 bg-white border border-brand-100 rounded-2xl shadow-xs">
+                <button
+                  onClick={() => setStickerFilter("all")}
+                  className={`flex-1 py-2 text-[10px] font-bold uppercase tracking-wider rounded-xl transition cursor-pointer ${
+                    stickerFilter === "all"
+                      ? "bg-brand-500 text-white shadow-xs"
+                      : "text-brand-800 hover:bg-brand-50/50"
+                  }`}
+                >
+                  Tutti ({stickers.length})
+                </button>
+                <button
+                  onClick={() => setStickerFilter("generic")}
+                  className={`flex-1 py-2 text-[10px] font-bold uppercase tracking-wider rounded-xl transition cursor-pointer ${
+                    stickerFilter === "generic"
+                      ? "bg-brand-500 text-white shadow-xs"
+                      : "text-brand-800 hover:bg-brand-50/50"
+                  }`}
+                >
+                  Generici ({stickers.filter(s => !s.associatedMeetingIds || s.associatedMeetingIds.length === 0).length})
+                </button>
+                <button
+                  onClick={() => setStickerFilter("linked")}
+                  className={`flex-1 py-2 text-[10px] font-bold uppercase tracking-wider rounded-xl transition cursor-pointer ${
+                    stickerFilter === "linked"
+                      ? "bg-brand-500 text-white shadow-xs"
+                      : "text-brand-800 hover:bg-brand-50/50"
+                  }`}
+                >
+                  Legati ({stickers.filter(s => s.associatedMeetingIds && s.associatedMeetingIds.length > 0).length})
+                </button>
+              </div>
+
+              {/* GRID OF STICKERS */}
+              {(() => {
+                const filteredStickers = stickers.filter((st) => {
+                  if (stickerFilter === "generic") {
+                    return !st.associatedMeetingIds || st.associatedMeetingIds.length === 0;
+                  }
+                  if (stickerFilter === "linked") {
+                    return st.associatedMeetingIds && st.associatedMeetingIds.length > 0;
+                  }
+                  return true;
+                });
+
+                if (filteredStickers.length === 0) {
+                  return (
+                    <div className="text-center py-10 space-y-2 bg-white rounded-2xl border border-brand-100 p-4">
+                      <p className="text-xs font-bold text-neutral-400 uppercase tracking-widest">Nessun adesivo trovato</p>
+                      <p className="text-[11px] text-neutral-400">Caricate la vostra prima foto ricordo sopra!</p>
+                    </div>
+                  );
+                }
+
+                return (
+                  <div className="grid grid-cols-2 gap-3.5">
+                    {filteredStickers.map((st) => {
+                      const isSelected = selectedDetailSticker?.id === st.id;
+                      return (
+                        <div
+                          key={st.id}
+                          className={`bg-white rounded-2xl border-2 p-3 flex flex-col space-y-2.5 transition duration-200 relative ${
+                            isSelected 
+                              ? "border-amber-400 shadow-md scale-[1.01]" 
+                              : "border-neutral-100 shadow-xs hover:border-neutral-200"
+                          }`}
+                        >
+                          {/* Image box */}
+                          <div 
+                            onClick={() => setSelectedDetailSticker(isSelected ? null : st)}
+                            className="aspect-square w-full rounded-xl overflow-hidden bg-slate-50 relative cursor-pointer"
+                          >
+                            <img
+                              src={st.url}
+                              alt={st.title}
+                              className="w-full h-full object-cover transition hover:scale-105"
+                            />
+                            {/* Author label */}
+                            <span className={`absolute top-1.5 right-1.5 text-[8px] font-black px-1.5 py-0.5 rounded-full shadow border bg-white ${
+                              st.uploadedBy === "Samuel" ? "text-sky-600 border-sky-100" : "text-rose-600 border-rose-100"
+                            }`}>
+                              {st.uploadedBy === "Samuel" ? "Samuel" : "Ilenia"}
+                            </span>
+                          </div>
+
+                          {/* Info section */}
+                          <div className="space-y-1.5 min-w-0 flex-1">
+                            <h4 className="text-[11px] font-black text-neutral-800 truncate leading-snug">{st.title}</h4>
+                            
+                            {/* Linked events section */}
+                            <div className="space-y-1">
+                              {st.associatedMeetingIds && st.associatedMeetingIds.length > 0 ? (
+                                st.associatedMeetingIds.map((mId) => {
+                                  const enc = encounters.find((e) => e.id === mId);
+                                  if (!enc) return null;
+                                  return (
+                                    <div key={mId} className="flex items-start gap-1 text-[8px] font-bold text-amber-800 bg-amber-50/70 border border-amber-100/60 p-1 rounded-md">
+                                      <Calendar className="w-2.5 h-2.5 text-amber-600 shrink-0 mt-0.5" />
+                                      <div className="truncate min-w-0">
+                                        <span className="font-mono">{enc.date.split("-").reverse().join("/")}</span>: {enc.title}
+                                      </div>
+                                    </div>
+                                  );
+                                })
+                              ) : (
+                                <div className="text-[8px] font-bold text-neutral-400 bg-neutral-50 border border-neutral-100 p-1 rounded-md flex items-center gap-0.5">
+                                  <span>📌 Ricordo Generale</span>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Footer action buttons */}
+                          <div className="flex gap-1.5 pt-1 mt-auto border-t border-neutral-50">
+                            <button
+                              onClick={() => {
+                                setSelectedDetailSticker(st);
+                                setIsLinkingOpen(true);
+                              }}
+                              className="flex-1 py-1.5 bg-neutral-50 hover:bg-neutral-100 border border-neutral-200/60 text-neutral-700 font-extrabold text-[9px] rounded-lg uppercase tracking-wider flex items-center justify-center gap-1 cursor-pointer transition active:scale-95"
+                            >
+                              <Link2 className="w-3 h-3 text-neutral-500" />
+                              <span>Collega</span>
+                            </button>
+                            <button
+                              onClick={() => handleDeleteSticker(st.id, st.title)}
+                              className="p-1.5 bg-red-50 hover:bg-red-100 text-red-600 border border-red-100 rounded-lg cursor-pointer transition active:scale-95"
+                              title="Elimina Sticker"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              })()}
+            </div>
+
+            {/* Bottom Actions */}
+            <div className="px-6 py-4 border-t border-brand-100/60 bg-white flex gap-3">
+              <button
+                onClick={() => setIsStickerGalleryOpen(false)}
+                className="w-full py-3 px-4 bg-brand-500 hover:bg-brand-600 text-white font-bold text-sm rounded-2xl transition active:scale-98 shadow-sm cursor-pointer text-center"
+              >
+                Chiudi Galleria ✨
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {/* ASSOCIATION LINKING DRAWER */}
+      {isLinkingOpen && selectedDetailSticker && typeof document !== "undefined" && createPortal(
+        <div
+          id="sticker-linking-overlay"
+          className="fixed inset-0 z-[11000] bg-black/60 backdrop-blur-xs flex items-end justify-center select-none animate-in fade-in duration-200"
+          onClick={() => setIsLinkingOpen(false)}
+        >
+          <div
+            id="sticker-linking-sheet"
+            className="w-full max-w-md bg-white rounded-t-[32px] shadow-2xl border-t border-brand-100 flex flex-col max-h-[70vh] animate-in slide-in-from-bottom-5 duration-300"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header indicator bar */}
+            <div className="w-12 h-1.5 bg-neutral-200 rounded-full mx-auto mt-3.5 mb-1 cursor-pointer" onClick={() => setIsLinkingOpen(false)} />
+
+            {/* Header */}
+            <div className="px-6 pt-2 pb-4 border-b border-brand-100/60 flex items-center justify-between">
+              <div>
+                <h3 className="text-sm font-black text-brand-950 font-display">Collega Incontri</h3>
+                <p className="text-[10px] text-brand-400 font-bold uppercase tracking-wider truncate max-w-[280px]">
+                  {selectedDetailSticker.title}
+                </p>
+              </div>
+              <button
+                onClick={() => setIsLinkingOpen(false)}
+                className="p-1.5 rounded-full bg-brand-50 hover:bg-brand-100 text-brand-600 transition-colors cursor-pointer"
+                aria-label="Chiudi collegamento"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Scrollable list of encounters */}
+            <div className="flex-1 overflow-y-auto px-6 py-4 space-y-3">
+              <p className="text-xs text-brand-500 font-medium">
+                Seleziona a quali incontri associare questo adesivo ricordo:
+              </p>
+
+              {encounters.length === 0 ? (
+                <div className="text-center py-8 text-neutral-400 text-xs">
+                  Nessun incontro disponibile per il collegamento.
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {encounters.map((enc) => {
+                    const isLinked = selectedDetailSticker.associatedMeetingIds?.includes(enc.id);
+                    return (
+                      <label
+                        key={enc.id}
+                        className={`flex items-start gap-3 p-3 rounded-2xl border-2 transition cursor-pointer ${
+                          isLinked
+                            ? "border-amber-400 bg-amber-50/50 text-amber-950"
+                            : "border-neutral-100 hover:bg-neutral-50 text-neutral-800"
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={isLinked}
+                          onChange={() => handleToggleStickerAssociation(selectedDetailSticker, enc.id)}
+                          className="mt-0.5 w-4 h-4 rounded text-amber-500 focus:ring-amber-400 border-neutral-300 cursor-pointer"
+                        />
+                        <div className="flex-1 min-w-0">
+                          <p className="text-xs font-extrabold truncate">{enc.title}</p>
+                          <p className="text-[9px] text-neutral-400 font-bold uppercase tracking-wider mt-0.5">
+                            {enc.date.split("-").reverse().join("/")}
+                          </p>
+                        </div>
+                      </label>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* Bottom Actions */}
+            <div className="px-6 py-4 border-t border-brand-100/60 bg-brand-50/50 flex gap-3">
+              <button
+                onClick={() => setIsLinkingOpen(false)}
+                className="w-full py-3 px-4 bg-brand-500 hover:bg-brand-600 text-white font-bold text-sm rounded-2xl transition active:scale-98 shadow-sm cursor-pointer text-center"
+              >
+                Salva Collegamenti ✨
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {/* SAFE CUSTOM DELETE CONFIRMATION MODAL */}
+      {deleteConfirmation && typeof document !== "undefined" && createPortal(
+        <div
+          id="custom-delete-confirm-overlay"
+          className="fixed inset-0 z-[12000] bg-black/65 backdrop-blur-xs flex items-center justify-center select-none animate-in fade-in duration-200 p-4"
+          onClick={() => setDeleteConfirmation(null)}
+        >
+          <div
+            id="custom-delete-confirm-card"
+            className="w-full max-w-sm bg-white rounded-3xl shadow-2xl border border-neutral-100 p-6 space-y-5 animate-in zoom-in-95 duration-200"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="space-y-2 text-center">
+              <div className="w-12 h-12 bg-red-50 text-red-600 rounded-full flex items-center justify-center mx-auto shadow-xs">
+                <Trash2 className="w-6 h-6" />
+              </div>
+              <h3 className="text-base font-black text-neutral-900 font-display">Sei assolutamente sicuro?</h3>
+              <p className="text-xs text-neutral-500 leading-relaxed">
+                Stai per eliminare definitivamente:
+                <br />
+                <span className="font-bold text-neutral-800 italic">"{deleteConfirmation.title}"</span>.
+                <br />
+                Questa azione è irreversibile e i dati non potranno essere recuperati.
+              </p>
+            </div>
+
+            <div className="flex gap-3">
+              <button
+                onClick={() => setDeleteConfirmation(null)}
+                className="flex-1 py-3 px-4 bg-neutral-100 hover:bg-neutral-200 text-neutral-700 font-bold text-xs rounded-2xl transition cursor-pointer active:scale-95 text-center uppercase tracking-wider"
+              >
+                Annulla
+              </button>
+              <button
+                onClick={handleConfirmDelete}
+                className="flex-1 py-3 px-4 bg-red-600 hover:bg-red-700 text-white font-bold text-xs rounded-2xl transition cursor-pointer active:scale-95 text-center uppercase tracking-wider shadow-sm"
+              >
+                Elimina
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
       )}
     </div>
   );

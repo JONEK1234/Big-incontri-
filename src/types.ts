@@ -12,6 +12,7 @@ export interface Encounter {
   noteIle?: string; // Ilenia's personal note/dedication
   photos: string[]; // Base64 or image URLs (fallback)
   photosWithAuthor?: EncounterPhoto[]; // Photos tagged with who uploaded them
+  stickers?: string[]; // Custom stickers added to the encounter
   createdAt: string;
 }
 
@@ -29,3 +30,13 @@ export interface LoveMessage {
   text: string;
   timestamp: string;
 }
+
+export interface Sticker {
+  id: string;
+  url: string;
+  title?: string;
+  uploadedBy: string; // "Samuel" | "Ilenia"
+  associatedMeetingIds: string[]; // IDs of encounters this sticker is associated with
+  createdAt: string;
+}
+

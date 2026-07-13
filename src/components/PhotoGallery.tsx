@@ -1,13 +1,16 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
+import { createPortal } from "react-dom";
 import { Encounter } from "../types";
-import { ImageIcon, Eye, Heart, Calendar, Sparkles } from "lucide-react";
+import { ImageIcon, Eye, Heart, Calendar, Sparkles, ChevronLeft, ChevronRight, X } from "lucide-react";
 
 interface PhotoGalleryProps {
   encounters: Encounter[];
 }
 
 export default function PhotoGallery({ encounters }: PhotoGalleryProps) {
-  const [selectedPhoto, setSelectedPhoto] = useState<{ url: string; date: string; title: string } | null>(null);
+  const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
+  const [touchStartX, setTouchStartX] = useState<number | null>(null);
+  const [touchEndX, setTouchEndX] = useState<number | null>(null);
 
   // Collect all photos from all encounters, paired with encounter info and author
   const allPhotos = encounters.flatMap((enc) => {
@@ -32,6 +35,67 @@ export default function PhotoGallery({ encounters }: PhotoGalleryProps) {
   const sortedPhotos = [...allPhotos].sort(
     (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
   );
+
+  const selectedPhoto = selectedIndex !== null ? sortedPhotos[selectedIndex] : null;
+
+  const handleNext = () => {
+    if (selectedIndex !== null && sortedPhotos.length > 0) {
+      setSelectedIndex((prevIndex) => (prevIndex! + 1) % sortedPhotos.length);
+    }
+  };
+
+  const handlePrev = () => {
+    if (selectedIndex !== null && sortedPhotos.length > 0) {
+      setSelectedIndex((prevIndex) => (prevIndex! - 1 + sortedPhotos.length) % sortedPhotos.length);
+    }
+  };
+
+  // Touch Swipe handlers
+  const handleTouchStart = (e: React.TouchEvent) => {
+    setTouchStartX(e.targetTouches[0].clientX);
+    setTouchEndX(null);
+  };
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    setTouchEndX(e.targetTouches[0].clientX);
+  };
+
+  const handleTouchEnd = () => {
+    if (touchStartX === null || touchEndX === null) return;
+    const diffX = touchStartX - touchEndX;
+    const swipeThreshold = 50; // minimum pixels for a swipe
+
+    if (diffX > swipeThreshold) {
+      // Swiped Left -> show next photo
+      handleNext();
+    } else if (diffX < -swipeThreshold) {
+      // Swiped Right -> show previous photo
+      handlePrev();
+    }
+
+    setTouchStartX(null);
+    setTouchEndX(null);
+  };
+
+  // Keyboard navigation
+  useEffect(() => {
+    if (selectedIndex === null) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "ArrowRight") {
+        handleNext();
+      } else if (e.key === "ArrowLeft") {
+        handlePrev();
+      } else if (e.key === "Escape") {
+        setSelectedIndex(null);
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [selectedIndex]);
 
   const formatDateLabel = (dateStr: string) => {
     return new Date(dateStr).toLocaleDateString("it-IT", {
@@ -81,7 +145,7 @@ export default function PhotoGallery({ encounters }: PhotoGalleryProps) {
             <div
               id={`gallery-item-${index}`}
               key={index}
-              onClick={() => setSelectedPhoto(photo)}
+              onClick={() => setSelectedIndex(index)}
               className="flex flex-col items-stretch cursor-pointer group active:scale-95 transition"
             >
               {/* Image box */}
@@ -118,51 +182,94 @@ export default function PhotoGallery({ encounters }: PhotoGalleryProps) {
         })}
       </div>
 
-      {/* Fullscreen Photo Lightbox Modal */}
-      {selectedPhoto && (
+      {/* Fullscreen Photo Lightbox Modal with Mobile Optimization and Swiping */}
+      {selectedPhoto && typeof document !== "undefined" && createPortal(
         <div
           id="gallery-lightbox"
-          onClick={() => setSelectedPhoto(null)}
-          className="fixed inset-0 z-50 bg-black/95 flex flex-col justify-center items-center p-4 cursor-pointer"
+          className="fixed inset-0 z-[9999] bg-black/95 flex items-center justify-center select-none touch-none animate-in fade-in duration-200"
+          onTouchStart={handleTouchStart}
+          onTouchMove={handleTouchMove}
+          onTouchEnd={handleTouchEnd}
+          onClick={() => setSelectedIndex(null)}
         >
+          {/* Top-Right Close Button */}
           <button
             id="close-gallery-lightbox"
-            className="absolute top-4 right-4 text-white hover:bg-white/10 p-2 rounded-full transition"
+            onClick={() => setSelectedIndex(null)}
+            className="absolute top-4 right-4 p-2.5 rounded-full bg-neutral-900/80 hover:bg-neutral-800 border border-white/10 text-white transition-colors cursor-pointer z-50 shadow-lg"
             aria-label="Chiudi"
           >
-            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-6 h-6"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+            <X className="w-5 h-5" />
           </button>
-          
-          <div className="max-w-full max-h-[75vh] p-1 flex flex-col items-center">
+
+          {/* Left Arrow Button */}
+          {sortedPhotos.length > 1 && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                handlePrev();
+              }}
+              className="absolute left-4 top-1/2 -translate-y-1/2 z-50 text-white/80 hover:text-white bg-neutral-900/80 hover:bg-neutral-800 border border-white/10 p-3 rounded-full transition active:scale-95 hidden md:flex items-center justify-center cursor-pointer shadow-lg"
+              aria-label="Precedente"
+            >
+              <ChevronLeft className="w-6 h-6" />
+            </button>
+          )}
+
+          {/* Right Arrow Button */}
+          {sortedPhotos.length > 1 && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                handleNext();
+              }}
+              className="absolute right-4 top-1/2 -translate-y-1/2 z-50 text-white/80 hover:text-white bg-neutral-900/80 hover:bg-neutral-800 border border-white/10 p-3 rounded-full transition active:scale-95 hidden md:flex items-center justify-center cursor-pointer shadow-lg"
+              aria-label="Successivo"
+            >
+              <ChevronRight className="w-6 h-6" />
+            </button>
+          )}
+
+          {/* Centered Image Container (Full screen, true fullscreen) */}
+          <div 
+            className="w-full h-full flex items-center justify-center p-2 animate-in zoom-in-95 duration-200"
+            onClick={() => setSelectedIndex(null)}
+          >
             <img
               src={selectedPhoto.url}
-              alt={selectedPhoto.title}
-              className="max-w-full max-h-[70vh] rounded-2xl object-contain shadow-2xl border border-white/10"
+              alt={selectedPhoto.title || "Immagine ricordo"}
+              className="max-w-full max-h-full object-contain rounded-lg shadow-2xl select-none"
+              referrerPolicy="no-referrer"
+              onClick={(e) => e.stopPropagation()}
             />
-            
-            {/* Metadata overlay card */}
-            <div className="mt-4 bg-white/15 backdrop-blur-md px-6 py-4 rounded-3xl border border-white/10 text-center max-w-sm" onClick={(e) => e.stopPropagation()}>
-              <h4 className="text-white text-sm font-bold tracking-tight">{selectedPhoto.title}</h4>
-              
-              <div className="flex items-center justify-center gap-3 mt-2">
-                <p className="text-sky-200 text-xs flex items-center gap-1 font-medium">
-                  <Calendar className="w-3.5 h-3.5" />
-                  {formatDateLabel(selectedPhoto.date)}
-                </p>
-                <span className="text-white/30 text-xs">•</span>
-                <span className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold ${
-                  selectedPhoto.uploadedBy === "Samuel" 
-                    ? "bg-sky-500/20 text-sky-200 border border-sky-500/30" 
-                    : "bg-rose-500/20 text-rose-200 border border-rose-500/30"
-                }`}>
-                  {selectedPhoto.uploadedBy === "Samuel" ? "👦 Samuel" : "👧 Ilenia"}
-                </span>
+
+            {/* Subtle floating overlay at the bottom */}
+            <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-40 pointer-events-none text-center">
+              <div className="bg-neutral-900/90 backdrop-blur-md border border-white/10 px-4 py-2 rounded-2xl flex flex-col items-center gap-0.5 shadow-2xl max-w-[90vw]">
+                {selectedPhoto.title && (
+                  <p className="text-white text-xs font-extrabold tracking-wide truncate max-w-[220px]">
+                    {selectedPhoto.title}
+                  </p>
+                )}
+                <div className="flex items-center gap-1.5 text-[10px] text-white/60 font-medium">
+                  <span className="font-bold text-white/80">{selectedIndex! + 1} di {sortedPhotos.length}</span>
+                  <span>•</span>
+                  <span>{formatDateLabel(selectedPhoto.date)}</span>
+                  <span>•</span>
+                  <span className={selectedPhoto.uploadedBy === "Samuel" ? "text-sky-300" : "text-rose-300"}>
+                    {selectedPhoto.uploadedBy}
+                  </span>
+                </div>
               </div>
+              {sortedPhotos.length > 1 && (
+                <span className="text-white/30 text-[9px] font-medium tracking-wide mt-2 block md:hidden">
+                  ← Scorri per cambiare foto →
+                </span>
+              )}
             </div>
           </div>
-          
-          <p className="text-white/40 text-[10px] mt-6">Tocca un punto qualsiasi per chiudere</p>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );
