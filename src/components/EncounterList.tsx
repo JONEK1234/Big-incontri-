@@ -314,66 +314,60 @@ export default function EncounterList({ encounters, stickers = [], onDelete, onE
                     </h3>
                   </div>
 
-                  <div className="flex items-center gap-1">
-                    {/* Edit button */}
-                    <button
-                      id={`edit-btn-${encounter.id}`}
-                      onClick={() => onEdit(encounter)}
-                      className="p-2 text-brand-400 hover:text-brand-600 hover:bg-brand-50 rounded-full transition"
-                      title="Modifica ricordo"
-                      aria-label="Modifica ricordo"
-                    >
-                      <Edit2 className="w-4 h-4" />
-                    </button>
-                    {/* Delete button */}
-                    <button
-                      id={`delete-btn-${encounter.id}`}
-                      onClick={() => {
-                        setDeleteConfirmation({
-                          type: "encounter",
-                          id: encounter.id,
-                          title: encounter.title,
-                        });
-                      }}
-                      className="p-2 text-brand-300 hover:text-red-500 hover:bg-red-50 rounded-full transition"
-                      title="Elimina ricordo"
-                      aria-label="Elimina incontro"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
+                  <div className="flex flex-col items-end gap-2 shrink-0">
+                    <div className="flex items-center gap-1">
+                      {/* Edit button */}
+                      <button
+                        id={`edit-btn-${encounter.id}`}
+                        onClick={() => onEdit(encounter)}
+                        className="p-2 text-brand-400 hover:text-brand-600 hover:bg-brand-50 rounded-full transition"
+                        title="Modifica ricordo"
+                        aria-label="Modifica ricordo"
+                      >
+                        <Edit2 className="w-4 h-4" />
+                      </button>
+                      {/* Delete button */}
+                      <button
+                        id={`delete-btn-${encounter.id}`}
+                        onClick={() => {
+                          setDeleteConfirmation({
+                            type: "encounter",
+                            id: encounter.id,
+                            title: encounter.title,
+                          });
+                        }}
+                        className="p-2 text-brand-300 hover:text-red-500 hover:bg-red-50 rounded-full transition"
+                        title="Elimina ricordo"
+                        aria-label="Elimina incontro"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+
+                    {/* Smiley face button below edit/delete tools */}
+                    {customStickersForThisEncounter.length > 0 && (
+                      <button
+                        onClick={() => {
+                          setStickerFilter(encounter.id);
+                          setIsStickerGalleryOpen(true);
+                        }}
+                        className="flex items-center gap-1 px-2 py-1 bg-amber-50 hover:bg-amber-100 border border-amber-200 rounded-full text-amber-950 hover:border-amber-300 transition active:scale-95 cursor-pointer shadow-xs font-bold mr-1"
+                        title={`Vedi gli sticker di questo giorno (${customStickersForThisEncounter.length})`}
+                      >
+                        <span className="text-sm">🙂</span>
+                        <span className="text-[10px] font-black text-amber-700">{customStickersForThisEncounter.length}</span>
+                      </button>
+                    )}
                   </div>
                 </div>
 
                 {/* Date Row */}
-                <div className="flex items-center gap-1.5 text-brand-500 text-xs mt-2.5 font-medium">
-                  <Calendar className="w-3.5 h-3.5" />
-                  <span>{formatDateLabel(encounter.date)}</span>
-                </div>
-
-                {/* Stickers Row */}
-                {customStickersForThisEncounter.length > 0 && (
-                  <div className="flex flex-wrap gap-1.5 mt-3 animate-in fade-in duration-300">
-                    {/* Custom Image Stickers */}
-                    {customStickersForThisEncounter.map((st) => (
-                      <span
-                        key={st.id}
-                        onClick={() => {
-                          setSelectedDetailSticker(st);
-                          setIsStickerGalleryOpen(true);
-                        }}
-                        className="inline-flex items-center gap-1.5 pl-1.5 pr-2.5 py-1 bg-white border border-amber-200 hover:border-amber-400 rounded-full text-xs font-bold text-amber-900 shadow-xs transition hover:scale-105 active:scale-95 cursor-pointer select-none"
-                        title={`${st.title} • Caricata da ${st.uploadedBy}. Clicca per visualizzare`}
-                      >
-                        <img
-                          src={st.url}
-                          alt={st.title}
-                          className="w-4 h-4 rounded-md object-cover border border-amber-50"
-                        />
-                        <span className="text-[9px] font-bold uppercase tracking-wider">{st.title}</span>
-                      </span>
-                    ))}
+                <div className="flex items-center justify-between gap-2 mt-2.5">
+                  <div className="flex items-center gap-1.5 text-brand-500 text-xs font-medium">
+                    <Calendar className="w-3.5 h-3.5" />
+                    <span>{formatDateLabel(encounter.date)}</span>
                   </div>
-                )}
+                </div>
               </div>
 
               {/* Photos Gallery */}
@@ -748,6 +742,29 @@ export default function EncounterList({ encounters, stickers = [], onDelete, onE
                 </button>
               </div>
 
+              {/* ACTIVE ENCOUNTER FILTER BANNER */}
+              {(() => {
+                const activeFilterEncounter = encounters.find(e => e.id === stickerFilter);
+                if (!activeFilterEncounter) return null;
+                return (
+                  <div className="bg-amber-50 border border-amber-200 rounded-2xl p-3 flex items-center justify-between text-xs animate-in fade-in duration-200">
+                    <div className="flex items-center gap-2 text-amber-950">
+                      <Sparkles className="w-4 h-4 text-amber-500 shrink-0" />
+                      <div>
+                        <p className="font-bold text-[11px] uppercase tracking-wide">Filtro Incontro Attivo</p>
+                        <p className="text-[10px] text-amber-700 italic font-medium">"{activeFilterEncounter.title}"</p>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => setStickerFilter("all")}
+                      className="px-2.5 py-1.5 bg-amber-200 hover:bg-amber-300 text-amber-950 font-bold text-[9px] uppercase tracking-wider rounded-xl transition cursor-pointer"
+                    >
+                      Annulla
+                    </button>
+                  </div>
+                );
+              })()}
+
               {/* GRID OF STICKERS */}
               {(() => {
                 const filteredStickers = stickers.filter((st) => {
@@ -757,10 +774,28 @@ export default function EncounterList({ encounters, stickers = [], onDelete, onE
                   if (stickerFilter === "linked") {
                     return st.associatedMeetingIds && st.associatedMeetingIds.length > 0;
                   }
+                  if (stickerFilter !== "all") {
+                    return st.associatedMeetingIds && st.associatedMeetingIds.includes(stickerFilter);
+                  }
                   return true;
                 });
 
-                if (filteredStickers.length === 0) {
+                const getStickerTime = (st: Sticker) => {
+                  if (st.associatedMeetingIds && st.associatedMeetingIds.length > 0) {
+                    const dates = st.associatedMeetingIds
+                      .map((mId) => encounters.find((e) => e.id === mId)?.date)
+                      .filter((date): date is string => !!date);
+                    if (dates.length > 0) {
+                      dates.sort();
+                      return new Date(dates[dates.length - 1]).getTime();
+                    }
+                  }
+                  return new Date(st.createdAt || 0).getTime();
+                };
+
+                const sortedStickers = [...filteredStickers].sort((a, b) => getStickerTime(b) - getStickerTime(a));
+
+                if (sortedStickers.length === 0) {
                   return (
                     <div className="text-center py-10 space-y-2 bg-white rounded-2xl border border-brand-100 p-4">
                       <p className="text-xs font-bold text-neutral-400 uppercase tracking-widest">Nessun adesivo trovato</p>
@@ -771,7 +806,7 @@ export default function EncounterList({ encounters, stickers = [], onDelete, onE
 
                 return (
                   <div className="grid grid-cols-2 gap-3.5">
-                    {filteredStickers.map((st) => {
+                    {sortedStickers.map((st) => {
                       const isSelected = selectedDetailSticker?.id === st.id;
                       return (
                         <div
@@ -802,7 +837,7 @@ export default function EncounterList({ encounters, stickers = [], onDelete, onE
 
                           {/* Info section */}
                           <div className="space-y-1.5 min-w-0 flex-1">
-                            <h4 className="text-[11px] font-black text-neutral-800 truncate leading-snug">{st.title}</h4>
+
                             
                             {/* Linked events section */}
                             <div className="space-y-1">
