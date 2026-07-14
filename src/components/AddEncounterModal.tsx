@@ -41,9 +41,33 @@ export default function AddEncounterModal({
   const [isCompressing, setIsCompressing] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const isLoadedRef = useRef(false);
+  const [hasRestoredDraft, setHasRestoredDraft] = useState(false);
 
+  // Load state when modal opens or encounterToEdit changes, checking for a saved draft
   useEffect(() => {
     if (isOpen) {
+      const key = encounterToEdit ? `bigincontri_draft_edit_${encounterToEdit.id}` : "bigincontri_draft_new";
+      const saved = localStorage.getItem(key);
+      if (saved) {
+        try {
+          const draft = JSON.parse(saved);
+          setDate(draft.date || "");
+          setTitle(draft.title || "");
+          setNote(draft.note || "");
+          setNoteSamuel(draft.noteSamuel || "");
+          setNoteIle(draft.noteIle || "");
+          setPhotosWithAuthor(draft.photosWithAuthor || []);
+          setHasRestoredDraft(true);
+          isLoadedRef.current = true;
+          return;
+        } catch (err) {
+          console.error("Error parsing saved draft:", err);
+        }
+      }
+
+      // No draft found, load original/empty values
+      setHasRestoredDraft(false);
       if (encounterToEdit) {
         setDate(encounterToEdit.date || "");
         setTitle(encounterToEdit.title || "");
@@ -70,8 +94,74 @@ export default function AddEncounterModal({
         setNoteIle("");
         setPhotosWithAuthor([]);
       }
+      isLoadedRef.current = true;
+    } else {
+      isLoadedRef.current = false;
+      setHasRestoredDraft(false);
     }
   }, [encounterToEdit, isOpen]);
+
+  // Save state to localStorage on changes, once state is fully initialized/loaded
+  useEffect(() => {
+    if (!isOpen || !isLoadedRef.current) return;
+
+    const hasContent = title.trim() || note.trim() || noteSamuel.trim() || noteIle.trim() || photosWithAuthor.length > 0;
+    const key = encounterToEdit ? `bigincontri_draft_edit_${encounterToEdit.id}` : "bigincontri_draft_new";
+
+    if (!hasContent) {
+      localStorage.removeItem(key);
+      setHasRestoredDraft(false);
+      return;
+    }
+
+    const draftData = {
+      date,
+      title,
+      note,
+      noteSamuel,
+      noteIle,
+      photosWithAuthor,
+    };
+
+    try {
+      localStorage.setItem(key, JSON.stringify(draftData));
+    } catch (err) {
+      console.warn("Storage draft failed (probably storage full):", err);
+    }
+  }, [date, title, note, noteSamuel, noteIle, photosWithAuthor, isOpen, encounterToEdit]);
+
+  const handleResetDraft = () => {
+    const key = encounterToEdit ? `bigincontri_draft_edit_${encounterToEdit.id}` : "bigincontri_draft_new";
+    localStorage.removeItem(key);
+    setHasRestoredDraft(false);
+
+    // Restore original empty or to-edit values
+    if (encounterToEdit) {
+      setDate(encounterToEdit.date || "");
+      setTitle(encounterToEdit.title || "");
+      setNote(encounterToEdit.note || "");
+      setNoteSamuel(encounterToEdit.noteSamuel || "");
+      setNoteIle(encounterToEdit.noteIle || "");
+      
+      if (encounterToEdit.photosWithAuthor && encounterToEdit.photosWithAuthor.length > 0) {
+        setPhotosWithAuthor(encounterToEdit.photosWithAuthor);
+      } else if (encounterToEdit.photos && encounterToEdit.photos.length > 0) {
+        setPhotosWithAuthor(
+          encounterToEdit.photos.map((url) => ({ url, uploadedBy: "Samuel" }))
+        );
+      } else {
+        setPhotosWithAuthor([]);
+      }
+    } else {
+      const today = new Date();
+      setDate(today.toISOString().split("T")[0]);
+      setTitle("");
+      setNote("");
+      setNoteSamuel("");
+      setNoteIle("");
+      setPhotosWithAuthor([]);
+    }
+  };
 
   if (!isOpen) return null;
 
@@ -127,6 +217,12 @@ export default function AddEncounterModal({
         photos: simplePhotos,
         photosWithAuthor,
       });
+
+      // Clear draft on successful save
+      const key = encounterToEdit ? `bigincontri_draft_edit_${encounterToEdit.id}` : "bigincontri_draft_new";
+      localStorage.removeItem(key);
+      setHasRestoredDraft(false);
+
       // Reset form
       setTitle("");
       setNote("");
@@ -168,6 +264,25 @@ export default function AddEncounterModal({
 
         {/* Form */}
         <form onSubmit={handleSubmit} className="p-6 space-y-5 flex-1">
+          {/* Active draft banner */}
+          {hasRestoredDraft && (
+            <div className="p-3.5 bg-amber-50 border border-amber-200 rounded-2xl flex items-center justify-between gap-2.5 animate-in fade-in duration-300">
+              <div className="flex items-center gap-2 text-amber-950">
+                <Sparkles className="w-4 h-4 text-amber-500 shrink-0 animate-pulse" />
+                <div>
+                  <p className="font-bold text-[11px] uppercase tracking-wider">Bozza ripristinata automaticamente 🙂</p>
+                  <p className="text-[10px] text-amber-700 font-medium">I tuoi testi e le tue foto sono al sicuro!</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={handleResetDraft}
+                className="px-2.5 py-1.5 bg-amber-100 hover:bg-amber-200 text-amber-950 font-black text-[9px] uppercase tracking-widest rounded-xl transition cursor-pointer active:scale-95 shrink-0"
+              >
+                Ricomincia 🗑️
+              </button>
+            </div>
+          )}
           {/* Date Picker */}
           <div className="space-y-1.5">
             <label className="text-xs font-bold text-brand-900 flex items-center gap-1.5 uppercase tracking-wider">
